@@ -224,16 +224,15 @@
   function applyDrawingStyles() {
     // Glowing gradient stroke
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#4285F4');    // Google Blue
-    gradient.addColorStop(0.33, '#EA4335'); // Google Red
-    gradient.addColorStop(0.66, '#FBBC05'); // Google Yellow
-    gradient.addColorStop(1, '#34A853');    // Google Green
+    gradient.addColorStop(0, '#a855f7');   // Purple
+    gradient.addColorStop(0.5, '#ec4899'); // Pink
+    gradient.addColorStop(1, '#f59e0b');   // Yellow
 
     ctx.strokeStyle = gradient;
     ctx.lineWidth   = 4;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
-    ctx.shadowColor = 'rgba(66, 133, 244, 0.8)'; // Google Blue outer glow
+    ctx.shadowColor = '#ec4899';           // Pink outer glow
     ctx.shadowBlur  = 16;
   }
 
@@ -366,10 +365,9 @@
       if (!ctx || !canvas) return;  // Guard: overlay may have been force-closed.
 
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      gradient.addColorStop(0, '#4285F4');
-      gradient.addColorStop(0.33, '#EA4335');
-      gradient.addColorStop(0.66, '#FBBC05');
-      gradient.addColorStop(1, '#34A853');
+      gradient.addColorStop(0, '#a855f7');
+      gradient.addColorStop(0.5, '#ec4899');
+      gradient.addColorStop(1, '#f59e0b');
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -378,7 +376,7 @@
       ctx.strokeStyle  = gradient;
       ctx.lineWidth    = 4;
       ctx.lineCap      = 'round';
-      ctx.shadowColor  = 'rgba(66, 133, 244, 0.8)';
+      ctx.shadowColor  = '#ec4899';
       ctx.shadowBlur   = blur;
 
       ctx.beginPath();
