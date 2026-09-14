@@ -26,6 +26,12 @@
   let animFrameId     = null;        // requestAnimationFrame handle for snap animation
   let storedScreenshot = null;       // Pre-captured PNG from background.js (taken at Alt+S time)
 
+  // Side panel state
+  let panelHost     = null;   // <div> appended to <html> that hosts the Shadow DOM
+  let panelShadow   = null;   // ShadowRoot (closed) for full CSS isolation
+  let lensResultUrl = null;   // Cached results URL for "Open in new tab" fallback
+  let _onPanelEsc   = null;   // Named ESC listener so we can remove it on close
+
   // Stored so they can be passed to removeEventListener verbatim
   let _onMouseDown = null;
   let _onMouseMove = null;
@@ -259,7 +265,10 @@
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Escape') removeOverlay();
+    if (e.key === 'Escape') {
+      removeOverlay();
+      closeSidePanel();
+    }
   }
 
   // ΓöÇΓöÇΓöÇ Real-time stroke smoothing ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -429,16 +438,24 @@
 
       const croppedDataUrl = offscreen.toDataURL('image/png');
 
+      // Open the side panel immediately with the thumbnail preview.
+      // The iframe content loads asynchronously once background.js returns the URL.
+      openSidePanel(croppedDataUrl);
+
       // Forward to the service worker for Google Lens upload.
       chrome.runtime.sendMessage(
         { action: 'searchGoogleLens', imageData: croppedDataUrl },
         (response) => {
           if (chrome.runtime.lastError) {
             console.error('[Circle to Search] Lens message error:', chrome.runtime.lastError.message);
+            showToast('Search failed — try again', 'error', 3000);
             return;
           }
-          if (!response?.success) {
+          if (response?.success) {
+            loadLensResultsInPanel(response.url);
+          } else {
             console.error('[Circle to Search] Lens search failed:', response?.error);
+            showToast('Search failed — try again', 'error', 3000);
           }
         }
       );
@@ -451,7 +468,297 @@
     img.src = screenshotUrl;
   }
 
-  // ΓöÇΓöÇΓöÇ Geometry helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // --- Results side panel ---------------------------------------------------
+
+  // CSS injected into the Shadow DOM — fully isolated from the host page.
+  const PANEL_CSS = `
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    .panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 420px;
+      height: 100vh;
+      z-index: 2147483646;
+      display: flex;
+      flex-direction: column;
+      background: #0b0e17;
+      border-left: 1px solid rgba(255,255,255,0.07);
+      box-shadow: -16px 0 56px rgba(0,0,0,0.70);
+      transform: translateX(100%);
+      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+      overflow: hidden;
+      font-family: 'Helvetica Neue', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    .panel.open { transform: translateX(0); }
+
+    /* ---- Header ---- */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      height: 50px;
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+    }
+
+    .header-title {
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.38);
+      flex: 1;
+    }
+
+    .btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 6px;
+      color: rgba(255,255,255,0.55);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      padding: 5px 11px;
+      line-height: 1;
+      transition: background 0.14s, border-color 0.14s, color 0.14s;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: rgba(255,255,255,0.07);
+      border-color: rgba(255,255,255,0.20);
+      color: rgba(255,255,255,0.88);
+    }
+
+    .btn-close {
+      padding: 4px 9px;
+      font-size: 15px;
+      border-color: transparent;
+    }
+
+    /* ---- Thumbnail ---- */
+    .thumb-section {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+      flex-shrink: 0;
+    }
+
+    .thumb-label {
+      font-size: 9px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.26);
+      margin-bottom: 7px;
+    }
+
+    .thumb-frame {
+      border-radius: 7px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      max-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .thumb-frame img {
+      max-width: 100%;
+      max-height: 120px;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* ---- Content / iframe area ---- */
+    .content { flex: 1; position: relative; overflow: hidden; }
+
+    iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* ---- Loading state ---- */
+    .loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 13px;
+    }
+
+    .spinner {
+      width: 26px;
+      height: 26px;
+      border: 2px solid rgba(255,255,255,0.08);
+      border-top-color: rgba(180,210,255,0.7);
+      border-radius: 50%;
+      animation: spin 0.72s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-size: 10.5px;
+      color: rgba(255,255,255,0.28);
+      letter-spacing: 0.05em;
+    }
+  `;
+
+  /**
+   * Creates and slides in the results side panel via Shadow DOM.
+   * @param {string} thumbnailDataUrl - Cropped selection preview.
+   */
+  function openSidePanel(thumbnailDataUrl) {
+    closeSidePanel(); // Dismiss any stale panel first
+
+    panelHost   = document.createElement('div');
+    panelHost.id = 'ctsearch-panel-host';
+    panelShadow = panelHost.attachShadow({ mode: 'closed' });
+
+    // --- Styles ---
+    const styleEl       = document.createElement('style');
+    styleEl.textContent = PANEL_CSS;
+    panelShadow.appendChild(styleEl);
+
+    // --- Panel shell ---
+    const panelEl     = document.createElement('div');
+    panelEl.className = 'panel';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'header';
+
+    const title       = document.createElement('span');
+    title.className   = 'header-title';
+    title.textContent = 'Circle to Search';
+
+    const openTabBtn       = document.createElement('button');
+    openTabBtn.className   = 'btn';
+    openTabBtn.id          = 'openTabBtn';
+    openTabBtn.textContent = 'Open in new tab';
+    openTabBtn.addEventListener('click', () => {
+      if (lensResultUrl) window.open(lensResultUrl, '_blank');
+    });
+
+    const closeBtn       = document.createElement('button');
+    closeBtn.className   = 'btn btn-close';
+    closeBtn.innerHTML   = '&times;';
+    closeBtn.title       = 'Close';
+    closeBtn.addEventListener('click', closeSidePanel);
+
+    header.append(title, openTabBtn, closeBtn);
+
+    // Thumbnail
+    const thumbSection       = document.createElement('div');
+    thumbSection.className   = 'thumb-section';
+    const thumbLabel         = document.createElement('div');
+    thumbLabel.className     = 'thumb-label';
+    thumbLabel.textContent   = 'Selection';
+    const thumbFrame         = document.createElement('div');
+    thumbFrame.className     = 'thumb-frame';
+    const thumbImg           = document.createElement('img');
+    thumbImg.src             = thumbnailDataUrl;
+    thumbImg.alt             = 'Selected region';
+    thumbFrame.appendChild(thumbImg);
+    thumbSection.append(thumbLabel, thumbFrame);
+
+    // Content area (loading state initially)
+    const contentArea     = document.createElement('div');
+    contentArea.className = 'content';
+    contentArea.id        = 'panelContent';
+
+    const loadingWrap       = document.createElement('div');
+    loadingWrap.className   = 'loading';
+    const spinner           = document.createElement('div');
+    spinner.className       = 'spinner';
+    const loadingText       = document.createElement('span');
+    loadingText.className   = 'loading-text';
+    loadingText.textContent = 'Searching with Google Lens';
+    loadingWrap.append(spinner, loadingText);
+    contentArea.appendChild(loadingWrap);
+
+    panelEl.append(header, thumbSection, contentArea);
+    panelShadow.appendChild(panelEl);
+    document.documentElement.appendChild(panelHost);
+
+    // Slide in (double rAF ensures the browser registers the initial state first)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => panelEl.classList.add('open'));
+    });
+
+    // ESC closes panel even after the drawing overlay is gone
+    _onPanelEsc = (e) => { if (e.key === 'Escape') closeSidePanel(); };
+    document.addEventListener('keydown', _onPanelEsc);
+  }
+
+  /**
+   * Loads the Google Lens results URL into the panel iframe.
+   * Replaces the loading spinner with the iframe.
+   * @param {string} url
+   */
+  function loadLensResultsInPanel(url) {
+    if (!panelShadow) return;
+    lensResultUrl = url;
+
+    const contentArea = panelShadow.getElementById('panelContent');
+    if (!contentArea) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.src   = url;
+    // Minimal sandbox — enough for Google Lens to navigate and render
+    iframe.setAttribute(
+      'sandbox',
+      'allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation'
+    );
+    iframe.setAttribute('loading', 'lazy');
+
+    contentArea.innerHTML = '';
+    contentArea.appendChild(iframe);
+  }
+
+  /**
+   * Slides the panel out and removes it from the DOM.
+   */
+  function closeSidePanel() {
+    if (!panelHost) return;
+
+    // Detach ESC listener
+    if (_onPanelEsc) {
+      document.removeEventListener('keydown', _onPanelEsc);
+      _onPanelEsc = null;
+    }
+
+    const panelEl = panelShadow?.querySelector('.panel');
+    if (panelEl) {
+      panelEl.classList.remove('open'); // Trigger slide-out transition
+      setTimeout(() => {
+        panelHost?.remove();
+        panelHost     = null;
+        panelShadow   = null;
+        lensResultUrl = null;
+      }, 420);
+    } else {
+      panelHost.remove();
+      panelHost     = null;
+      panelShadow   = null;
+      lensResultUrl = null;
+    }
+  }
+
+  // --- Geometry helpers -------------------------------------------------------
+
 
   /**
    * Computes the axis-aligned bounding box AND the centroid (center of mass)

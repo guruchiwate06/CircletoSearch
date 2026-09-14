@@ -5,12 +5,13 @@
  *  1. On Alt+S command: capture the visible tab as a PNG screenshot IMMEDIATELY
  *     (while the activeTab permission token from the keyboard shortcut is fresh),
  *     then forward the screenshot + toggle action to the content script.
- *  2. On "searchGoogleLens" message: receive the cropped Base64 PNG from the
- *     content script, upload it to Google Lens via a multipart POST, follow the
- *     redirect, and open the resulting Lens search page in a new active tab.
+ *  2. On "searchGoogleLens" message: receive the cropped Base64 PNG from content.js,
+ *     upload it to Google Lens, follow the redirect, and return the results URL
+ *     so content.js can display it inside the in-page side panel iframe.
+ *     No new tab is opened — the panel handles display entirely.
  */
 
-// ─── Command: toggle overlay ─────────────────────────────────────────────────
+// --- Command: toggle overlay -------------------------------------------------
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'activate-overlay') return;
@@ -29,7 +30,6 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 
   // Capture screenshot NOW — activeTab token is live from the keyboard shortcut.
-  // Taking it before the overlay appears gives a clean, overlay-free page image.
   let screenshotUrl = null;
   try {
     screenshotUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
@@ -45,10 +45,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   } catch (err) {
     console.warn('[Circle to Search] Message failed, injecting content script:', err.message);
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js'],
-      });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       await chrome.tabs.sendMessage(tab.id, payload);
     } catch (injectionErr) {
       console.error('[Circle to Search] Could not inject content script:', injectionErr.message);
@@ -56,7 +53,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// ─── Message: Google Lens visual search ──────────────────────────────────────
+// --- Message: Google Lens visual search -------------------------------------
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action !== 'searchGoogleLens') return;
@@ -68,57 +65,45 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ success: false, error: err.message });
     });
 
-  // Return true to keep the message channel open for the async response.
-  return true;
+  return true; // Keep channel open for async sendResponse
 });
 
 /**
- * Uploads a Base64 PNG to Google Lens via multipart POST, follows the redirect,
- * and opens the Lens results page in a new active tab.
+ * Uploads the cropped Base64 PNG to Google Lens via multipart POST,
+ * follows all redirects, and returns the final results page URL.
  *
- * The service worker bypasses CORS restrictions because the extension has
- * host_permissions for <all_urls>. No separate CORS proxy is needed.
+ * content.js loads this URL into the in-page side panel iframe.
+ * No chrome.tabs.create() is called here.
  *
- * @param {string} imageDataUrl - Base64 PNG data URL (e.g. "data:image/png;base64,...")
- * @returns {Promise<string>} The final Google Lens results URL.
+ * @param {string} imageDataUrl - data:image/png;base64,... string.
+ * @returns {Promise<string>} Final Google Lens search results URL.
  */
 async function performLensSearch(imageDataUrl) {
-  // ── 1. Decode the base64 payload into a binary Blob ──────────────────────
+  // 1. Decode base64 to binary Blob
   const base64    = imageDataUrl.split(',')[1];
   const binary    = atob(base64);
   const bytes     = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const imageBlob = new Blob([bytes], { type: 'image/png' });
 
-  // ── 2. Build the multipart form Google Lens expects ───────────────────────
+  // 2. Build the multipart form Google Lens expects
   const form = new FormData();
   form.append('encoded_image', imageBlob, 'selection.png');
   form.append('image_content', '');
 
-  // ── 3. POST to the Google Lens v3 upload endpoint ─────────────────────────
-  // Google will redirect through several hops to the final search-results URL.
-  // fetch() follows redirects automatically; response.url is the final URL.
+  // 3. POST and follow redirects; response.url is the final results page
   const uploadEndpoint =
     `https://lens.google.com/v3/upload?hl=en&re=df&st=${Date.now()}&ep=gsbubb`;
 
   const response = await fetch(uploadEndpoint, {
-    method:   'POST',
-    body:     form,
-    redirect: 'follow',
+    method: 'POST', body: form, redirect: 'follow',
   });
 
   const resultUrl = response.url;
-
   if (!resultUrl || resultUrl === uploadEndpoint) {
     throw new Error(`Lens upload did not redirect — HTTP ${response.status}`);
   }
 
   console.log('[Circle to Search] Lens results URL:', resultUrl);
-
-  // ── 4. Open the results in a new foreground tab ───────────────────────────
-  await chrome.tabs.create({ url: resultUrl, active: true });
-
   return resultUrl;
 }

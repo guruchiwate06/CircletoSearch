@@ -7,8 +7,19 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "declarativeNetRequest"
   ],
+
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "lens_frame_rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
 
   "host_permissions": [
     "<all_urls>"
