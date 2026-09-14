@@ -313,12 +313,16 @@
   // ─── Crop → download ─────────────────────────────────────────────────────────
 
   /**
-   * Loads the full-tab screenshot, crops it to the selection bounding box
-   * (accounting for devicePixelRatio), and triggers a browser download.
+   * Loads the pre-captured screenshot, crops it to the selection bounding box
+   * (accounting for devicePixelRatio), and triggers a browser download directly
+   * from the content script via a hidden <a download> anchor + Blob URL.
+   *
+   * NOTE: chrome.downloads.download() rejects data: URLs in MV3 — we avoid
+   * that entire path by using URL.createObjectURL() here instead.
    *
    * @param {string} screenshotUrl - Base64 PNG data URL of the full tab.
    * @param {{ minX: number, minY: number, width: number, height: number }} bbox - CSS-pixel coords.
-   * @param {number} dpr - devicePixelRatio at the time of capture.
+   * @param {number} dpr - devicePixelRatio at capture time.
    */
   function cropAndDownload(screenshotUrl, bbox, dpr) {
     const img = new Image();
@@ -349,12 +353,29 @@
       const croppedDataUrl = offscreen.toDataURL('image/png');
       console.log('[Circle to Search] Cropped image ready. Size:', sw, 'x', sh, 'px');
 
-      // Ask the service worker to trigger the download (content scripts
-      // cannot call chrome.downloads directly).
-      chrome.runtime.sendMessage({
-        action:  'download-image',
-        dataUrl: croppedDataUrl,
-      });
+      // Convert data URL → Blob → object URL so the <a> download works reliably.
+      // chrome.downloads.download() does not accept data: URLs in MV3.
+      const byteString = atob(croppedDataUrl.split(',')[1]);
+      const mimeType   = 'image/png';
+      const byteArray  = new Uint8Array(byteString.length);
+      for (let i = 0; i < byteString.length; i++) {
+        byteArray[i] = byteString.charCodeAt(i);
+      }
+      const blob    = new Blob([byteArray], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Trigger download via hidden anchor — works from content scripts.
+      const a      = document.createElement('a');
+      a.href       = blobUrl;
+      a.download   = 'cropped-selection.png';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Release the object URL after a tick so the browser can process the click.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      console.log('[Circle to Search] Download triggered.');
     };
 
     img.onerror = () => {

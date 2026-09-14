@@ -58,15 +58,3 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
   }
 });
-
-// ─── Message: download cropped image ─────────────────────────────────────────
-
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action !== 'download-image') return;
-
-  chrome.downloads.download({
-    url:      message.dataUrl,
-    filename: 'cropped-selection.png',
-    saveAs:   false,
-  });
-});
