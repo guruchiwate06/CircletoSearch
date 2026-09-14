@@ -139,6 +139,12 @@
       cursor:          'crosshair',
       // Subtle dark wash so the glowing stroke pops against any page
       background:      'rgba(0, 0, 0, 0.18)',
+      // Multi-colored glowing border on all sides
+      boxSizing:       'border-box',
+      boxShadow:       'inset 0 0 0 2px rgba(236, 72, 153, 0.8), ' +
+                       'inset 0 0 24px rgba(236, 72, 153, 0.6), ' +
+                       'inset 0 0 48px rgba(168, 85, 247, 0.4), ' +
+                       'inset 0 0 48px rgba(245, 158, 11, 0.4)',
       // Prevent the canvas from swallowing text selection on the page beneath
       userSelect:      'none',
       touchAction:     'none',
