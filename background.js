@@ -53,19 +53,46 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// --- Message: Google Lens visual search -------------------------------------
+let creatingOffscreen;
+
+async function setupOffscreenDocument(path) {
+  if (await chrome.offscreen.hasDocument()) return;
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+  } else {
+    creatingOffscreen = chrome.offscreen.createDocument({
+      url: path,
+      reasons: [chrome.offscreen.Reason.DOM_PARSER],
+      justification: 'Run Tesseract.js OCR'
+    });
+    await creatingOffscreen;
+    creatingOffscreen = null;
+  }
+}
+
+// --- Message Listener --------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action !== 'searchGoogleLens') return;
+  if (message.action === 'searchGoogleLens') {
+    performLensSearch(message.imageData)
+      .then((resultUrl) => sendResponse({ success: true, url: resultUrl }))
+      .catch((err) => {
+        console.error('[Circle to Search] Lens search error:', err.message);
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // Keep channel open
+  }
 
-  performLensSearch(message.imageData)
-    .then((resultUrl) => sendResponse({ success: true, url: resultUrl }))
-    .catch((err) => {
-      console.error('[Circle to Search] Lens search error:', err.message);
-      sendResponse({ success: false, error: err.message });
-    });
-
-  return true; // Keep channel open for async sendResponse
+  if (message.action === 'extract_text') {
+    setupOffscreenDocument('ocr.html')
+      .then(() => chrome.runtime.sendMessage({ action: 'perform_ocr', imageData: message.imageData }))
+      .then(response => sendResponse(response))
+      .catch(err => {
+        console.error('[Circle to Search] OCR routing error:', err.message);
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // Keep channel open
+  }
 });
 
 /**

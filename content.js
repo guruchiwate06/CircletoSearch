@@ -427,6 +427,18 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
+  // ─── State ──────────────────────────────────────────────────────────────────
+
+  let overlayActive = false;
+  let isDrawing     = false;
+  let points        = [];
+  let storedScreenshot = null;
+  let lensResultUrl = null;
+  let currentOcrText = "";
+  let currentMode = "VISUAL_SEARCH";
+  let currentCropDataUrl = "";
+  let shadowRoot = null;
+
   // ─── Crop & Lens Search ─────────────────────────────────────────────────────
 
   /**
@@ -623,6 +635,58 @@
     /* ---- Content / iframe area ---- */
     .content { flex: 1; position: relative; overflow: hidden; }
 
+    /* ---- Action Bar ---- */
+    .action-bar {
+      display: flex;
+      gap: 6px;
+      padding: 0 14px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+      overflow-x: auto;
+    }
+    .action-bar::-webkit-scrollbar { display: none; }
+    .action-chip {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 5px 10px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.6);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .action-chip:hover {
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.9);
+    }
+    .action-chip.active {
+      background: rgba(66, 133, 244, 0.15);
+      border-color: #c58af9;
+      color: #fff;
+      box-shadow: 0 0 8px rgba(197, 138, 249, 0.4);
+    }
+
+    /* ---- Copy Text Area ---- */
+    .copy-text-area {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 100%;
+    }
+    .copy-text-area textarea {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      color: #fff;
+      padding: 10px;
+      font-family: inherit;
+      font-size: 12px;
+      resize: none;
+      outline: none;
+    }
+
     iframe {
       position: absolute;
       inset: 0;
@@ -719,6 +783,25 @@
     thumbFrame.appendChild(thumbImg);
     thumbSection.append(thumbLabel, thumbFrame);
 
+    // Action Bar
+    const actionBar = document.createElement('div');
+    actionBar.className = 'action-bar';
+    const modes = [
+      { id: 'VISUAL_SEARCH', label: 'Visual Search' },
+      { id: 'COPY_TEXT', label: 'Extract Text' },
+      { id: 'TRANSLATE', label: 'Translate' },
+      { id: 'MATH', label: 'Math Solver' }
+    ];
+    modes.forEach(m => {
+      const chip = document.createElement('button');
+      chip.className = 'action-chip';
+      if (m.id === currentMode) chip.classList.add('active');
+      chip.dataset.mode = m.id;
+      chip.textContent = m.label;
+      chip.addEventListener('click', () => setActionMode(m.id));
+      actionBar.appendChild(chip);
+    });
+
     // Content area (loading state initially)
     const contentArea     = document.createElement('div');
     contentArea.className = 'content';
@@ -730,11 +813,11 @@
     spinner.className       = 'spinner';
     const loadingText       = document.createElement('span');
     loadingText.className   = 'loading-text';
-    loadingText.textContent = 'Searching with Google Lens';
+    loadingText.textContent = 'Analyzing selection...';
     loadingWrap.append(spinner, loadingText);
     contentArea.appendChild(loadingWrap);
 
-    panelEl.append(header, thumbSection, contentArea);
+    panelEl.append(header, thumbSection, actionBar, contentArea);
     panelShadow.appendChild(panelEl);
     document.documentElement.appendChild(panelHost);
 
@@ -746,6 +829,53 @@
     // ESC closes panel even after the drawing overlay is gone
     _onPanelEsc = (e) => { if (e.key === 'Escape') closeSidePanel(); };
     document.addEventListener('keydown', _onPanelEsc);
+  }
+
+  function setActionMode(mode) {
+    currentMode = mode;
+    if (!panelShadow) return;
+    
+    // Update chip styling
+    const chips = panelShadow.querySelectorAll('.action-chip');
+    chips.forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.mode === mode);
+    });
+
+    const contentArea = panelShadow.getElementById('panelContent');
+    if (!contentArea) return;
+
+    if (mode === 'VISUAL_SEARCH') {
+      contentArea.innerHTML = `<div class="loading"><div class="spinner"></div><span class="loading-text">Searching Google Lens...</span></div>`;
+      chrome.runtime.sendMessage(
+        { action: 'searchGoogleLens', imageData: currentCropDataUrl },
+        (response) => {
+          if (chrome.runtime.lastError) return;
+          if (response && response.success) loadLensResultsInPanel(response.url);
+        }
+      );
+    } else if (mode === 'MATH') {
+      const url = `https://www.google.com/search?q=${encodeURIComponent(currentOcrText)}`;
+      loadLensResultsInPanel(url);
+    } else if (mode === 'TRANSLATE') {
+      const url = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(currentOcrText)}&op=translate`;
+      loadLensResultsInPanel(url);
+    } else if (mode === 'COPY_TEXT') {
+      contentArea.innerHTML = `
+        <div class="copy-text-area">
+          <textarea readonly>${currentOcrText}</textarea>
+          <button class="btn" id="btnCopyText">Copy to Clipboard</button>
+        </div>
+      `;
+      panelShadow.getElementById('btnCopyText').addEventListener('click', () => {
+         navigator.clipboard.writeText(currentOcrText);
+         panelShadow.getElementById('btnCopyText').textContent = 'Copied!';
+         setTimeout(() => {
+           if(panelShadow.getElementById('btnCopyText')) {
+             panelShadow.getElementById('btnCopyText').textContent = 'Copy to Clipboard';
+           }
+         }, 2000);
+      });
+    }
   }
 
   /**
