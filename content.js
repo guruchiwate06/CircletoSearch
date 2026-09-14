@@ -2,7 +2,12 @@
  * content.js — Circle to Search Overlay
  *
  * Injects a full-screen canvas when activated. The user draws a freehand
- * shape; on mouseup the bounding-box coordinates are calculated and logged.
+ * shape; on mouseup the extension:
+ *   1. Computes the bounding box of the drawn path.
+ *   2. Sends the bbox + devicePixelRatio to background.js requesting a screenshot.
+ *   3. Receives the Base64 PNG screenshot, crops it to the selection on an
+ *      off-screen canvas (DPR-scaled for Retina / 4K displays).
+ *   4. Converts the crop to a Data URL and triggers a download via background.js.
  * All event listeners are named and removed on cleanup — no stray handlers.
  */
 
@@ -138,10 +143,13 @@
     if (points.length > 1) {
       const bbox = computeBoundingBox(points);
       console.log('[Circle to Search] Bounding box:', bbox);
+
+      // Request a screenshot from the service worker, then crop and download.
+      requestScreenshotAndCrop(bbox);
     }
 
-    // Hold the finished stroke briefly, then dismiss
-    setTimeout(removeOverlay, 650);
+    // Hold the finished stroke briefly while the screenshot is taken, then dismiss.
+    setTimeout(removeOverlay, 800);
   }
 
   function handleKeyDown(e) {
@@ -177,6 +185,90 @@
     const last = points[points.length - 1];
     ctx.lineTo(last.x, last.y);
     ctx.stroke();
+  }
+
+  // ─── Screenshot → crop → download ────────────────────────────────────────────
+
+  /**
+   * Sends the bounding box and DPR to background.js, waits for the
+   * full-page screenshot, then crops it and triggers a download.
+   *
+   * @param {{ minX: number, minY: number, width: number, height: number }} bbox
+   */
+  function requestScreenshotAndCrop(bbox) {
+    const dpr = window.devicePixelRatio || 1;
+
+    chrome.runtime.sendMessage(
+      { action: 'capture-screenshot', bbox, devicePixelRatio: dpr },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Circle to Search] Screenshot message error:', chrome.runtime.lastError.message);
+          return;
+        }
+        if (!response?.success) {
+          console.error('[Circle to Search] Screenshot failed:', response?.error);
+          return;
+        }
+
+        cropAndDownload(
+          response.screenshotUrl,
+          response.bbox,
+          response.devicePixelRatio
+        );
+      }
+    );
+  }
+
+  /**
+   * Loads the full-tab screenshot, crops it to the selection bounding box
+   * (accounting for devicePixelRatio), and triggers a browser download.
+   *
+   * @param {string} screenshotUrl - Base64 PNG data URL of the full tab.
+   * @param {{ minX: number, minY: number, width: number, height: number }} bbox - CSS-pixel coords.
+   * @param {number} dpr - devicePixelRatio at the time of capture.
+   */
+  function cropAndDownload(screenshotUrl, bbox, dpr) {
+    const img = new Image();
+
+    img.onload = () => {
+      // Scale CSS-pixel coordinates to physical device pixels.
+      const sx = Math.round(bbox.minX  * dpr);
+      const sy = Math.round(bbox.minY  * dpr);
+      const sw = Math.round(bbox.width  * dpr);
+      const sh = Math.round(bbox.height * dpr);
+
+      // Guard against a zero-area or out-of-bounds crop.
+      if (sw <= 0 || sh <= 0) {
+        console.warn('[Circle to Search] Crop area is empty — nothing to download.');
+        return;
+      }
+
+      // Off-screen canvas — never added to the DOM.
+      const offscreen = document.createElement('canvas');
+      offscreen.width  = sw;
+      offscreen.height = sh;
+
+      const offCtx = offscreen.getContext('2d');
+
+      // drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
+      offCtx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      const croppedDataUrl = offscreen.toDataURL('image/png');
+      console.log('[Circle to Search] Cropped image ready. Size:', sw, 'x', sh, 'px');
+
+      // Ask the service worker to trigger the download (content scripts
+      // cannot call chrome.downloads directly).
+      chrome.runtime.sendMessage({
+        action:  'download-image',
+        dataUrl: croppedDataUrl,
+      });
+    };
+
+    img.onerror = () => {
+      console.error('[Circle to Search] Failed to load screenshot for cropping.');
+    };
+
+    img.src = screenshotUrl;
   }
 
   // ─── Bounding box ────────────────────────────────────────────────────────────
