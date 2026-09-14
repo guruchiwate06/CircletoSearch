@@ -247,8 +247,8 @@
     // Phase 2 ΓÇö once animation ends, crop the pre-captured screenshot and download.
     animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
       if (storedScreenshot) {
-        showToast('Selection captured');
-        cropToMemory(storedScreenshot, bbox, window.devicePixelRatio || 1);
+        showToast('Searching Google Lens');
+        cropAndLensSearch(storedScreenshot, bbox, window.devicePixelRatio || 1);
       } else {
         showToast('Capture failed — reload the extension', 'error', 4000);
         console.warn('[Circle to Search] No screenshot available ΓÇö skipping crop.');
@@ -358,20 +358,20 @@
       let scale, blur, alpha;
 
       if (elapsed < SNAP_MS) {
-        // Phase A ΓÇö snap in.
+        // Phase A — snap in.
         const t = elapsed / SNAP_MS;
         scale = easeOutCubic(t);
         blur  = 16;
         alpha = 1;
       } else if (elapsed < SNAP_MS + GLOW_MS) {
-        // Phase B ΓÇö glow pulse.
+        // Phase B — glow pulse.
         const t = (elapsed - SNAP_MS) / GLOW_MS;
         scale = 1;
-        // Pulse blur 16 ΓåÆ 40 ΓåÆ 16 using a sine wave.
+        // Pulse blur 16 → 40 → 16 using a sine wave.
         blur  = 16 + 24 * Math.sin(t * Math.PI);
         alpha = 1;
       } else {
-        // Phase C ΓÇö settle.
+        // Phase C — settle.
         scale = 1;
         blur  = 16;
         alpha = 1;
@@ -390,18 +390,18 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // ΓöÇΓöÇΓöÇ Crop ΓåÆ memory ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ─── Crop & Lens Search ─────────────────────────────────────────────────────
 
   /**
-   * Loads the pre-captured screenshot, crops it to the selection bounding box
-   * (DPR-scaled for Retina / 4K), and stores the result as a Base64 Data URL
-   * in `window.currentCroppedImage`. No file is written to disk.
+   * Crops the pre-captured screenshot to the selection bounding box (DPR-scaled),
+   * converts it to a Base64 PNG Data URL, and forwards it to background.js to
+   * perform a Google Lens visual search in a new tab.
    *
    * @param {string} screenshotUrl - Base64 PNG data URL of the full tab.
    * @param {{ minX: number, minY: number, width: number, height: number }} bbox - CSS-pixel coords.
    * @param {number} dpr - devicePixelRatio at capture time.
    */
-  function cropToMemory(screenshotUrl, bbox, dpr) {
+  function cropAndLensSearch(screenshotUrl, bbox, dpr) {
     const img = new Image();
 
     img.onload = () => {
@@ -429,9 +429,19 @@
 
       const croppedDataUrl = offscreen.toDataURL('image/png');
 
-      // Store in memory ΓÇö no file download.
-      window.currentCroppedImage = croppedDataUrl;
-      console.log('Cropped image ready in memory:', window.currentCroppedImage);
+      // Forward to the service worker for Google Lens upload.
+      chrome.runtime.sendMessage(
+        { action: 'searchGoogleLens', imageData: croppedDataUrl },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Circle to Search] Lens message error:', chrome.runtime.lastError.message);
+            return;
+          }
+          if (!response?.success) {
+            console.error('[Circle to Search] Lens search failed:', response?.error);
+          }
+        }
+      );
     };
 
     img.onerror = () => {
