@@ -32,6 +32,46 @@
   let _onMouseUp   = null;
   let _onKeyDown   = null;
 
+  // ─── Toast notification ──────────────────────────────────────────────────────
+
+  /**
+   * Shows a brief floating toast at the top-centre of the viewport.
+   * Automatically fades out after `duration` ms.
+   *
+   * @param {string} text      Message text (emoji welcome).
+   * @param {'info'|'error'} [type='info']
+   * @param {number} [duration=2200]  Auto-hide delay in ms.
+   */
+  function showToast(text, type = 'info', duration = 2200) {
+    const toast = document.createElement('div');
+    toast.textContent = text;
+    Object.assign(toast.style, {
+      position:        'fixed',
+      top:             '20px',
+      left:            '50%',
+      transform:       'translateX(-50%)',
+      zIndex:          '2147483647',
+      padding:         '10px 20px',
+      borderRadius:    '8px',
+      fontSize:        '14px',
+      fontFamily:      'system-ui, sans-serif',
+      fontWeight:      '600',
+      color:           '#fff',
+      background:      type === 'error' ? 'rgba(220,38,38,0.92)' : 'rgba(15,23,42,0.90)',
+      border:          type === 'error' ? '1px solid #f87171' : '1px solid #38BDF8',
+      boxShadow:       '0 4px 20px rgba(0,0,0,0.4)',
+      pointerEvents:   'none',
+      transition:      'opacity 0.4s ease',
+      opacity:         '1',
+      whiteSpace:      'nowrap',
+    });
+    document.documentElement.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 450);
+    }, duration);
+  }
+
   // ─── Overlay lifecycle ───────────────────────────────────────────────────────
 
   function createOverlay() {
@@ -169,8 +209,10 @@
     // Phase 2 — once animation ends, crop the pre-captured screenshot and download.
     animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
       if (storedScreenshot) {
+        showToast('✅ Saving crop…');
         cropAndDownload(storedScreenshot, bbox, window.devicePixelRatio || 1);
       } else {
+        showToast('⚠️ No screenshot — reload extension and try again.', 'error', 4000);
         console.warn('[Circle to Search] No screenshot available — skipping crop.');
       }
       // Brief pause so the user sees the final glow before the overlay disappears.
@@ -440,7 +482,10 @@
       // Store the pre-captured screenshot sent by background.js.
       // It was taken the moment Alt+S was pressed — clean, no overlay visible.
       storedScreenshot = message.screenshotUrl || null;
-      if (!storedScreenshot) {
+      if (storedScreenshot) {
+        showToast('📷 Ready — draw your selection');
+      } else {
+        showToast('⚠️ Screenshot failed — reload the extension.', 'error', 4000);
         console.warn('[Circle to Search] No screenshot in toggle message — crop will be skipped.');
       }
       createOverlay();

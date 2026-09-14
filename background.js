@@ -33,7 +33,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   // with no drawing overlay visible in the crop.
   let screenshotUrl = null;
   try {
-    screenshotUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    screenshotUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
     console.log('[Circle to Search] Screenshot captured at command time.');
   } catch (err) {
     console.warn('[Circle to Search] captureVisibleTab failed:', err.message);
