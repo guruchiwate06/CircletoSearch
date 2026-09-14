@@ -740,8 +740,11 @@
     const contentArea = panelShadow.getElementById('panelContent');
     if (!contentArea) return;
 
+    // Append a marker so declarativeNetRequest can spoof a mobile User-Agent specifically for this iframe
+    const mobileUrl = url + (url.includes('?') ? '&' : '?') + 'c2s_mobile=1';
+
     const iframe = document.createElement('iframe');
-    iframe.src   = url;
+    iframe.src   = mobileUrl;
     // Minimal sandbox — enough for Google Lens to navigate and render
     iframe.setAttribute(
       'sandbox',

@@ -31,5 +31,23 @@
       "urlFilter": "||lens.google.com/v3/upload",
       "resourceTypes": ["xmlhttprequest"]
     }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "user-agent",
+          "operation": "set",
+          "value": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "c2s_mobile=1",
+      "resourceTypes": ["sub_frame"]
+    }
   }
 ]
