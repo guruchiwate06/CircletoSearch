@@ -134,10 +134,10 @@
       style.id = 'c2s-global-styles';
       style.textContent = `
         @keyframes c2s-breathe {
-          0% { box-shadow: inset 0 0 0 2px rgba(66,133,244,0.8), inset 0 0 24px rgba(66,133,244,0.6), inset 0 0 48px rgba(234,67,53,0.4), inset 0 0 48px rgba(251,188,5,0.4); }
-          33% { box-shadow: inset 0 0 0 2px rgba(234,67,53,0.8), inset 0 0 24px rgba(234,67,53,0.6), inset 0 0 48px rgba(251,188,5,0.4), inset 0 0 48px rgba(52,168,83,0.4); }
-          66% { box-shadow: inset 0 0 0 2px rgba(251,188,5,0.8), inset 0 0 24px rgba(251,188,5,0.6), inset 0 0 48px rgba(52,168,83,0.4), inset 0 0 48px rgba(66,133,244,0.4); }
-          100% { box-shadow: inset 0 0 0 2px rgba(66,133,244,0.8), inset 0 0 24px rgba(66,133,244,0.6), inset 0 0 48px rgba(234,67,53,0.4), inset 0 0 48px rgba(251,188,5,0.4); }
+          0% { box-shadow: inset 0 0 0 2px rgba(66,133,244,0.8), inset 0 0 24px rgba(66,133,244,0.6), inset 0 0 48px rgba(197,138,249,0.4), inset 0 0 48px rgba(245,130,80,0.4); }
+          33% { box-shadow: inset 0 0 0 2px rgba(197,138,249,0.8), inset 0 0 24px rgba(197,138,249,0.6), inset 0 0 48px rgba(245,130,80,0.4), inset 0 0 48px rgba(66,133,244,0.4); }
+          66% { box-shadow: inset 0 0 0 2px rgba(245,130,80,0.8), inset 0 0 24px rgba(245,130,80,0.6), inset 0 0 48px rgba(66,133,244,0.4), inset 0 0 48px rgba(197,138,249,0.4); }
+          100% { box-shadow: inset 0 0 0 2px rgba(66,133,244,0.8), inset 0 0 24px rgba(66,133,244,0.6), inset 0 0 48px rgba(197,138,249,0.4), inset 0 0 48px rgba(245,130,80,0.4); }
         }
       `;
       document.head.appendChild(style);
@@ -224,15 +224,15 @@
   function applyDrawingStyles() {
     // Glowing gradient stroke
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#a855f7');   // Purple
-    gradient.addColorStop(0.5, '#ec4899'); // Pink
-    gradient.addColorStop(1, '#f59e0b');   // Yellow
+    gradient.addColorStop(0, '#4285f4');   // Gemini Blue
+    gradient.addColorStop(0.5, '#c58af9'); // Gemini Purple
+    gradient.addColorStop(1, '#f58250');   // Gemini Peach
 
     ctx.strokeStyle = gradient;
     ctx.lineWidth   = 4;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
-    ctx.shadowColor = '#ec4899';           // Pink outer glow
+    ctx.shadowColor = '#c58af9';           // Gemini Purple outer glow
     ctx.shadowBlur  = 16;
   }
 
@@ -365,9 +365,9 @@
       if (!ctx || !canvas) return;  // Guard: overlay may have been force-closed.
 
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      gradient.addColorStop(0, '#a855f7');
-      gradient.addColorStop(0.5, '#ec4899');
-      gradient.addColorStop(1, '#f59e0b');
+      gradient.addColorStop(0, '#4285f4');
+      gradient.addColorStop(0.5, '#c58af9');
+      gradient.addColorStop(1, '#f58250');
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -376,7 +376,7 @@
       ctx.strokeStyle  = gradient;
       ctx.lineWidth    = 4;
       ctx.lineCap      = 'round';
-      ctx.shadowColor  = '#ec4899';
+      ctx.shadowColor  = '#c58af9';
       ctx.shadowBlur   = blur;
 
       ctx.beginPath();
@@ -524,16 +524,16 @@
       position: absolute;
       top: 0; left: 0; bottom: 0;
       width: 2px;
-      background: linear-gradient(to bottom, #4285F4, #EA4335, #FBBC05, #34A853, #4285F4);
-      background-size: 100% 400%;
+      background: linear-gradient(to bottom, #4285f4, #c58af9, #f58250, #4285f4);
+      background-size: 100% 300%;
       z-index: 10;
       animation: panel-glow-move 6s linear infinite;
     }
 
     @keyframes panel-glow-move {
       0%   { background-position: 0 0%;   box-shadow: 0 0 16px rgba(66, 133, 244, 0.8); }
-      33%  { background-position: 0 33%;  box-shadow: 0 0 16px rgba(234, 67, 53, 0.8); }
-      66%  { background-position: 0 66%;  box-shadow: 0 0 16px rgba(251, 188, 5, 0.8); }
+      33%  { background-position: 0 33%;  box-shadow: 0 0 16px rgba(197, 138, 249, 0.8); }
+      66%  { background-position: 0 66%;  box-shadow: 0 0 16px rgba(245, 130, 80, 0.8); }
       100% { background-position: 0 100%; box-shadow: 0 0 16px rgba(66, 133, 244, 0.8); }
     }
 
