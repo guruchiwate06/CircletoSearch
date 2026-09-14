@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Desktop Circle to Search",
+  "version": "1.0.0",
+  "description": "Draw a freehand circle on any webpage to capture a selection area — desktop-style Circle to Search.",
+
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "commands": {
+    "activate-overlay": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "windows": "Alt+S",
+        "mac": "Alt+S",
+        "linux": "Alt+S"
+      },
+      "description": "Toggle the Circle to Search selection overlay"
+    }
+  }
+}
