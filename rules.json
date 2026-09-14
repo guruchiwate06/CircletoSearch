@@ -16,5 +16,20 @@
       "requestDomains": ["google.com", "lens.google.com", "www.google.com"],
       "resourceTypes": ["sub_frame"]
     }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "origin",  "operation": "set", "value": "https://lens.google.com" },
+        { "header": "referer", "operation": "set", "value": "https://lens.google.com/" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "||lens.google.com/v3/upload",
+      "resourceTypes": ["xmlhttprequest"]
+    }
   }
 ]
