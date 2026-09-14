@@ -3,11 +3,13 @@
  *
  * Injects a full-screen canvas when activated. The user draws a freehand
  * shape; on mouseup the extension:
- *   1. Computes the bounding box of the drawn path.
- *   2. Sends the bbox + devicePixelRatio to background.js requesting a screenshot.
- *   3. Receives the Base64 PNG screenshot, crops it to the selection on an
- *      off-screen canvas (DPR-scaled for Retina / 4K displays).
- *   4. Converts the crop to a Data URL and triggers a download via background.js.
+ *   1. Real-time smoothing: renders the stroke with mid-point quadratic Bézier
+ *      curves during mousemove for a fluid, Google-like feel.
+ *   2. Self-correction: on mouseup, computes the centroid + bounding box of all
+ *      captured points, clears the raw path, and animates a clean glowing ellipse
+ *      that snaps into place with a pulse (snap → glow → fade, ~600 ms total).
+ *   3. Requests a screenshot from background.js, crops it to the corrected
+ *      bounding box (DPR-scaled for Retina / 4K), and downloads the result.
  * All event listeners are named and removed on cleanup — no stray handlers.
  */
 
@@ -21,6 +23,7 @@
   let ctx           = null;
   let isDrawing     = false;
   let points        = [];          // Collected pointer positions for the current stroke
+  let animFrameId   = null;        // requestAnimationFrame handle for snap animation
 
   // Stored so they can be passed to removeEventListener verbatim
   let _onMouseDown = null;
@@ -81,6 +84,12 @@
     if (!overlayActive) return;
     overlayActive = false;
 
+    // Cancel any in-flight snap animation.
+    if (animFrameId !== null) {
+      cancelAnimationFrame(animFrameId);
+      animFrameId = null;
+    }
+
     if (canvas) {
       canvas.removeEventListener('mousedown', _onMouseDown);
       canvas.removeEventListener('mousemove', _onMouseMove);
@@ -140,40 +149,48 @@
     isDrawing = false;
     points.push({ x: e.clientX, y: e.clientY });
 
-    if (points.length > 1) {
-      const bbox = computeBoundingBox(points);
-      console.log('[Circle to Search] Bounding box:', bbox);
-
-      // Request a screenshot from the service worker, then crop and download.
-      requestScreenshotAndCrop(bbox);
+    if (points.length < 2) {
+      removeOverlay();
+      return;
     }
 
-    // Hold the finished stroke briefly while the screenshot is taken, then dismiss.
-    setTimeout(removeOverlay, 800);
+    const { minX, minY, width, height, cx, cy } = computeBoundingBox(points);
+    const bbox = { minX, minY, width, height };
+    console.log('[Circle to Search] Corrected bbox:', bbox, '  centroid:', { cx, cy });
+
+    // Phase 1 — snap raw stroke into clean ellipse with pulse animation (~600 ms).
+    // Phase 2 — once animation ends, take screenshot and crop.
+    animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
+      requestScreenshotAndCrop(bbox);
+      // Brief pause so the user sees the final glow before the overlay disappears.
+      setTimeout(removeOverlay, 200);
+    });
   }
 
   function handleKeyDown(e) {
     if (e.key === 'Escape') removeOverlay();
   }
 
-  // ─── Smooth stroke rendering ─────────────────────────────────────────────────
+  // ─── Real-time stroke smoothing ───────────────────────────────────────────────
 
   /**
-   * Re-draws the entire stroke on every mousemove using mid-point
-   * quadratic Bezier curves, producing a smooth, continuous line
-   * rather than straight segments between raw pointer samples.
+   * Re-draws the entire stroke on every mousemove using mid-point quadratic
+   * Bézier curves. Each segment curves through the midpoint of consecutive
+   * samples rather than drawing straight lines between raw pointer positions,
+   * producing a smooth, fluid line in real-time.
    */
   function renderStroke() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (points.length < 2) return;
 
-    // Re-apply styles after clearRect (shadowBlur can reset in some browsers)
+    // Re-apply styles after clearRect (shadowBlur resets in some browsers).
     applyDrawingStyles();
 
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
 
     for (let i = 1; i < points.length - 1; i++) {
+      // Control point = raw sample; end point = midpoint to next sample.
       const cpX  = points[i].x;
       const cpY  = points[i].y;
       const endX = (points[i].x + points[i + 1].x) / 2;
@@ -181,10 +198,105 @@
       ctx.quadraticCurveTo(cpX, cpY, endX, endY);
     }
 
-    // Line to the final point
     const last = points[points.length - 1];
     ctx.lineTo(last.x, last.y);
     ctx.stroke();
+  }
+
+  // ─── Snap-to-ellipse animation ────────────────────────────────────────────────
+
+  /**
+   * Clears the raw stroke and animates a polished, glowing ellipse that
+   * "snaps" into place over ~600 ms in three phases:
+   *
+   *   Phase A (0 – 150 ms)  — ellipse scales up from 0 → 1 (snap-in).
+   *   Phase B (150 – 400 ms) — shadowBlur pulses from 16 → 40 (glow peak).
+   *   Phase C (400 – 600 ms) — shadowBlur settles back to 16 (calm glow).
+   *
+   * @param {{ cx: number, cy: number, rx: number, ry: number }} ellipse
+   * @param {() => void} onComplete  Called once when the animation finishes.
+   */
+  function animateSnapToEllipse({ cx, cy, rx, ry }, onComplete) {
+    const SNAP_MS  = 150;   // Phase A duration
+    const GLOW_MS  = 250;   // Phase B duration
+    const SETTLE_MS = 200;  // Phase C duration
+    const TOTAL_MS = SNAP_MS + GLOW_MS + SETTLE_MS;
+
+    const startTime = performance.now();
+
+    /**
+     * Ease-out cubic: fast start, gradual finish — good for a "snap" feel.
+     * @param {number} t  Progress in [0, 1].
+     */
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    /**
+     * Draw a single ellipse frame.
+     * @param {number} scale   Radii multiplier (0 → 1 during snap-in).
+     * @param {number} blur    shadowBlur value.
+     * @param {number} alpha   Global opacity (reserved for future fade-out).
+     */
+    function drawEllipseFrame(scale, blur, alpha) {
+      if (!ctx || !canvas) return;  // Guard: overlay may have been force-closed.
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.globalAlpha  = alpha;
+      ctx.strokeStyle  = '#38BDF8';
+      ctx.lineWidth    = 3.5;
+      ctx.lineCap      = 'round';
+      ctx.shadowColor  = '#7DD3FC';
+      ctx.shadowBlur   = blur;
+
+      ctx.beginPath();
+      // canvas ellipse: (cx, cy, radiusX, radiusY, rotation, startAngle, endAngle)
+      ctx.ellipse(cx, cy, Math.max(1, rx * scale), Math.max(1, ry * scale), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function tick(now) {
+      if (!canvas) return;  // Overlay was dismissed mid-animation.
+
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / TOTAL_MS, 1);
+
+      let scale, blur, alpha;
+
+      if (elapsed < SNAP_MS) {
+        // Phase A — snap in.
+        const t = elapsed / SNAP_MS;
+        scale = easeOutCubic(t);
+        blur  = 16;
+        alpha = 1;
+      } else if (elapsed < SNAP_MS + GLOW_MS) {
+        // Phase B — glow pulse.
+        const t = (elapsed - SNAP_MS) / GLOW_MS;
+        scale = 1;
+        // Pulse blur 16 → 40 → 16 using a sine wave.
+        blur  = 16 + 24 * Math.sin(t * Math.PI);
+        alpha = 1;
+      } else {
+        // Phase C — settle.
+        scale = 1;
+        blur  = 16;
+        alpha = 1;
+      }
+
+      drawEllipseFrame(scale, blur, alpha);
+
+      if (progress < 1) {
+        animFrameId = requestAnimationFrame(tick);
+      } else {
+        animFrameId = null;
+        onComplete();
+      }
+    }
+
+    animFrameId = requestAnimationFrame(tick);
   }
 
   // ─── Screenshot → crop → download ────────────────────────────────────────────
@@ -271,29 +383,47 @@
     img.src = screenshotUrl;
   }
 
-  // ─── Bounding box ────────────────────────────────────────────────────────────
+  // ─── Geometry helpers ─────────────────────────────────────────────────────────
 
   /**
-   * Returns the axis-aligned bounding box of the drawn path.
+   * Computes the axis-aligned bounding box AND the centroid (center of mass)
+   * of the drawn path points.
+   *
    * @param {{ x: number, y: number }[]} pts
-   * @returns {{ minX: number, minY: number, width: number, height: number }}
+   * @returns {{
+   *   minX: number, minY: number,
+   *   maxX: number, maxY: number,
+   *   width: number, height: number,
+   *   cx: number, cy: number   ← geometric center of the bounding box
+   * }}
    */
   function computeBoundingBox(pts) {
     let minX = Infinity,  minY = Infinity;
     let maxX = -Infinity, maxY = -Infinity;
+    let sumX = 0, sumY = 0;
 
     for (const { x, y } of pts) {
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
       if (y > maxY) maxY = y;
+      sumX += x;
+      sumY += y;
     }
+
+    const width  = maxX - minX;
+    const height = maxY - minY;
 
     return {
       minX:   Math.round(minX),
       minY:   Math.round(minY),
-      width:  Math.round(maxX - minX),
-      height: Math.round(maxY - minY),
+      maxX:   Math.round(maxX),
+      maxY:   Math.round(maxY),
+      width:  Math.round(width),
+      height: Math.round(height),
+      // Geometric center of the bounding box (used for ellipse placement).
+      cx:     minX + width  / 2,
+      cy:     minY + height / 2,
     };
   }
 
