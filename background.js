@@ -79,24 +79,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  * @returns {Promise<string>} Final Google Lens search results URL.
  */
 async function performLensSearch(imageDataUrl) {
-  // 1. Decode base64 to binary Blob
-  const base64    = imageDataUrl.split(',')[1];
-  const binary    = atob(base64);
-  const bytes     = new Uint8Array(binary.length);
+  // 1. Decode base64 to binary
+  const base64 = imageDataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const imageBlob = new Blob([bytes], { type: 'image/png' });
 
-  // 2. Build the multipart form Google Lens expects
-  const form = new FormData();
-  form.append('encoded_image', imageBlob, 'selection.png');
-  form.append('image_content', '');
+  // 2. Build multipart/form-data manually.
+  // This bypasses a known Chrome MV3 bug where fetch() with FormData + Blob fails in Service Workers.
+  const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+  
+  const header = `--${boundary}\r\nContent-Disposition: form-data; name="encoded_image"; filename="selection.png"\r\nContent-Type: image/png\r\n\r\n`;
+  const footer = `\r\n--${boundary}\r\nContent-Disposition: form-data; name="image_content"\r\n\r\n\r\n--${boundary}--\r\n`;
+
+  const headerBytes = new TextEncoder().encode(header);
+  const footerBytes = new TextEncoder().encode(footer);
+
+  const body = new Uint8Array(headerBytes.length + bytes.length + footerBytes.length);
+  body.set(headerBytes, 0);
+  body.set(bytes, headerBytes.length);
+  body.set(footerBytes, headerBytes.length + bytes.length);
 
   // 3. POST and follow redirects; response.url is the final results page
   const uploadEndpoint =
     `https://lens.google.com/v3/upload?hl=en&re=df&st=${Date.now()}&ep=gsbubb`;
 
   const response = await fetch(uploadEndpoint, {
-    method: 'POST', body: form, redirect: 'follow', referrerPolicy: 'no-referrer'
+    method: 'POST',
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`
+    },
+    body: body,
+    redirect: 'follow',
+    referrerPolicy: 'no-referrer'
   });
 
   const resultUrl = response.url;
