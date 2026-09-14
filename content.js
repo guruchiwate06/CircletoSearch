@@ -21,9 +21,10 @@
   let overlayActive = false;
   let canvas        = null;
   let ctx           = null;
-  let isDrawing     = false;
-  let points        = [];          // Collected pointer positions for the current stroke
-  let animFrameId   = null;        // requestAnimationFrame handle for snap animation
+  let isDrawing       = false;
+  let points          = [];          // Collected pointer positions for the current stroke
+  let animFrameId     = null;        // requestAnimationFrame handle for snap animation
+  let storedScreenshot = null;       // Pre-captured PNG from background.js (taken at Alt+S time)
 
   // Stored so they can be passed to removeEventListener verbatim
   let _onMouseDown = null;
@@ -74,7 +75,9 @@
 
     canvas.addEventListener('mousedown', _onMouseDown);
     canvas.addEventListener('mousemove', _onMouseMove);
-    canvas.addEventListener('mouseup',   _onMouseUp);
+    // mouseup on window — fires even if the cursor leaves the canvas during
+    // a fast circular stroke, preventing the overlay from getting stuck.
+    window.addEventListener('mouseup',   _onMouseUp);
     document.addEventListener('keydown', _onKeyDown);
 
     document.documentElement.appendChild(canvas);
@@ -90,14 +93,18 @@
       animFrameId = null;
     }
 
+    // mouseup was registered on window, not canvas — remove it there.
+    window.removeEventListener('mouseup', _onMouseUp);
+
     if (canvas) {
       canvas.removeEventListener('mousedown', _onMouseDown);
       canvas.removeEventListener('mousemove', _onMouseMove);
-      canvas.removeEventListener('mouseup',   _onMouseUp);
       canvas.remove();
       canvas = null;
       ctx    = null;
     }
+
+    storedScreenshot = null;
 
     document.removeEventListener('keydown', _onKeyDown);
 
@@ -159,9 +166,13 @@
     console.log('[Circle to Search] Corrected bbox:', bbox, '  centroid:', { cx, cy });
 
     // Phase 1 — snap raw stroke into clean ellipse with pulse animation (~600 ms).
-    // Phase 2 — once animation ends, take screenshot and crop.
+    // Phase 2 — once animation ends, crop the pre-captured screenshot and download.
     animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
-      requestScreenshotAndCrop(bbox);
+      if (storedScreenshot) {
+        cropAndDownload(storedScreenshot, bbox, window.devicePixelRatio || 1);
+      } else {
+        console.warn('[Circle to Search] No screenshot available — skipping crop.');
+      }
       // Brief pause so the user sees the final glow before the overlay disappears.
       setTimeout(removeOverlay, 200);
     });
@@ -299,37 +310,7 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // ─── Screenshot → crop → download ────────────────────────────────────────────
-
-  /**
-   * Sends the bounding box and DPR to background.js, waits for the
-   * full-page screenshot, then crops it and triggers a download.
-   *
-   * @param {{ minX: number, minY: number, width: number, height: number }} bbox
-   */
-  function requestScreenshotAndCrop(bbox) {
-    const dpr = window.devicePixelRatio || 1;
-
-    chrome.runtime.sendMessage(
-      { action: 'capture-screenshot', bbox, devicePixelRatio: dpr },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Circle to Search] Screenshot message error:', chrome.runtime.lastError.message);
-          return;
-        }
-        if (!response?.success) {
-          console.error('[Circle to Search] Screenshot failed:', response?.error);
-          return;
-        }
-
-        cropAndDownload(
-          response.screenshotUrl,
-          response.bbox,
-          response.devicePixelRatio
-        );
-      }
-    );
-  }
+  // ─── Crop → download ─────────────────────────────────────────────────────────
 
   /**
    * Loads the full-tab screenshot, crops it to the selection bounding box
@@ -431,7 +412,18 @@
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.action !== 'toggle-overlay') return;
-    overlayActive ? removeOverlay() : createOverlay();
+
+    if (overlayActive) {
+      removeOverlay();
+    } else {
+      // Store the pre-captured screenshot sent by background.js.
+      // It was taken the moment Alt+S was pressed — clean, no overlay visible.
+      storedScreenshot = message.screenshotUrl || null;
+      if (!storedScreenshot) {
+        console.warn('[Circle to Search] No screenshot in toggle message — crop will be skipped.');
+      }
+      createOverlay();
+    }
   });
 
 })();
