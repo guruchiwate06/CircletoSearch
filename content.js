@@ -209,8 +209,8 @@
     // Phase 2 — once animation ends, crop the pre-captured screenshot and download.
     animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
       if (storedScreenshot) {
-        showToast('✅ Saving crop…');
-        cropAndDownload(storedScreenshot, bbox, window.devicePixelRatio || 1);
+        showToast('✅ Crop saved to memory — check console');
+        cropToMemory(storedScreenshot, bbox, window.devicePixelRatio || 1);
       } else {
         showToast('⚠️ No screenshot — reload extension and try again.', 'error', 4000);
         console.warn('[Circle to Search] No screenshot available — skipping crop.');
@@ -352,21 +352,18 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // ─── Crop → download ─────────────────────────────────────────────────────────
+  // ─── Crop → memory ─────────────────────────────────────────────────────────────
 
   /**
    * Loads the pre-captured screenshot, crops it to the selection bounding box
-   * (accounting for devicePixelRatio), and triggers a browser download directly
-   * from the content script via a hidden <a download> anchor + Blob URL.
-   *
-   * NOTE: chrome.downloads.download() rejects data: URLs in MV3 — we avoid
-   * that entire path by using URL.createObjectURL() here instead.
+   * (DPR-scaled for Retina / 4K), and stores the result as a Base64 Data URL
+   * in `window.currentCroppedImage`. No file is written to disk.
    *
    * @param {string} screenshotUrl - Base64 PNG data URL of the full tab.
    * @param {{ minX: number, minY: number, width: number, height: number }} bbox - CSS-pixel coords.
    * @param {number} dpr - devicePixelRatio at capture time.
    */
-  function cropAndDownload(screenshotUrl, bbox, dpr) {
+  function cropToMemory(screenshotUrl, bbox, dpr) {
     const img = new Image();
 
     img.onload = () => {
@@ -393,31 +390,10 @@
       offCtx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
       const croppedDataUrl = offscreen.toDataURL('image/png');
-      console.log('[Circle to Search] Cropped image ready. Size:', sw, 'x', sh, 'px');
 
-      // Convert data URL → Blob → object URL so the <a> download works reliably.
-      // chrome.downloads.download() does not accept data: URLs in MV3.
-      const byteString = atob(croppedDataUrl.split(',')[1]);
-      const mimeType   = 'image/png';
-      const byteArray  = new Uint8Array(byteString.length);
-      for (let i = 0; i < byteString.length; i++) {
-        byteArray[i] = byteString.charCodeAt(i);
-      }
-      const blob    = new Blob([byteArray], { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Trigger download via hidden anchor — works from content scripts.
-      const a      = document.createElement('a');
-      a.href       = blobUrl;
-      a.download   = 'cropped-selection.png';
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      // Release the object URL after a tick so the browser can process the click.
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-      console.log('[Circle to Search] Download triggered.');
+      // Store in memory — no file download.
+      window.currentCroppedImage = croppedDataUrl;
+      console.log('Cropped image ready in memory:', window.currentCroppedImage);
     };
 
     img.onerror = () => {
