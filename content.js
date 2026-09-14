@@ -25,6 +25,10 @@
   let points          = [];          // Collected pointer positions for the current stroke
   let animFrameId     = null;        // requestAnimationFrame handle for snap animation
   let storedScreenshot = null;       // Pre-captured PNG from background.js (taken at Alt+S time)
+  
+  let currentOcrText = "";
+  let currentMode = "VISUAL_SEARCH";
+  let currentCropDataUrl = "";
 
   // Side panel state
   let panelHost     = null;   // <div> appended to <html> that hosts the Shadow DOM
@@ -427,17 +431,7 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // ─── State ──────────────────────────────────────────────────────────────────
 
-  let overlayActive = false;
-  let isDrawing     = false;
-  let points        = [];
-  let storedScreenshot = null;
-  let lensResultUrl = null;
-  let currentOcrText = "";
-  let currentMode = "VISUAL_SEARCH";
-  let currentCropDataUrl = "";
-  let shadowRoot = null;
 
   // ─── Crop & Lens Search ─────────────────────────────────────────────────────
 
