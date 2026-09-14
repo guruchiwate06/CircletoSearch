@@ -464,14 +464,14 @@
         (response) => {
           if (chrome.runtime.lastError) {
             console.error('[Circle to Search] Lens message error:', chrome.runtime.lastError.message);
-            showToast('Search failed — try again', 'error', 3000);
+            showToast('Err: ' + chrome.runtime.lastError.message, 'error', 6000);
             return;
           }
           if (response?.success) {
             loadLensResultsInPanel(response.url);
           } else {
             console.error('[Circle to Search] Lens search failed:', response?.error);
-            showToast('Search failed — try again', 'error', 3000);
+            showToast('Err: ' + (response?.error || 'Unknown error'), 'error', 6000);
           }
         }
       );
