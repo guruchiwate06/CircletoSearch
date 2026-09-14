@@ -96,7 +96,7 @@ async function performLensSearch(imageDataUrl) {
     `https://lens.google.com/v3/upload?hl=en&re=df&st=${Date.now()}&ep=gsbubb`;
 
   const response = await fetch(uploadEndpoint, {
-    method: 'POST', body: form, redirect: 'follow',
+    method: 'POST', body: form, redirect: 'follow', referrerPolicy: 'no-referrer'
   });
 
   const resultUrl = response.url;
