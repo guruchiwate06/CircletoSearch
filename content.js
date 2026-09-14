@@ -1,22 +1,22 @@
 /**
- * content.js — Circle to Search Overlay
+ * content.js ΓÇö Circle to Search Overlay
  *
  * Injects a full-screen canvas when activated. The user draws a freehand
  * shape; on mouseup the extension:
- *   1. Real-time smoothing: renders the stroke with mid-point quadratic Bézier
+ *   1. Real-time smoothing: renders the stroke with mid-point quadratic B├⌐zier
  *      curves during mousemove for a fluid, Google-like feel.
  *   2. Self-correction: on mouseup, computes the centroid + bounding box of all
  *      captured points, clears the raw path, and animates a clean glowing ellipse
- *      that snaps into place with a pulse (snap → glow → fade, ~600 ms total).
+ *      that snaps into place with a pulse (snap ΓåÆ glow ΓåÆ fade, ~600 ms total).
  *   3. Requests a screenshot from background.js, crops it to the corrected
  *      bounding box (DPR-scaled for Retina / 4K), and downloads the result.
- * All event listeners are named and removed on cleanup — no stray handlers.
+ * All event listeners are named and removed on cleanup ΓÇö no stray handlers.
  */
 
 (function () {
   'use strict';
 
-  // ─── State ──────────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ State ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   let overlayActive = false;
   let canvas        = null;
@@ -32,47 +32,85 @@
   let _onMouseUp   = null;
   let _onKeyDown   = null;
 
-  // ─── Toast notification ──────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Toast notification ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   /**
-   * Shows a brief floating toast at the top-centre of the viewport.
-   * Automatically fades out after `duration` ms.
+   * Shows a brief floating notification pill at the top-centre of the viewport.
+   * Slides down on entry, slides up on exit. No emojis — clean, typographic only.
    *
-   * @param {string} text      Message text (emoji welcome).
+   * @param {string} text
    * @param {'info'|'error'} [type='info']
-   * @param {number} [duration=2200]  Auto-hide delay in ms.
+   * @param {number} [duration=2000]
    */
-  function showToast(text, type = 'info', duration = 2200) {
-    const toast = document.createElement('div');
-    toast.textContent = text;
-    Object.assign(toast.style, {
-      position:        'fixed',
-      top:             '20px',
-      left:            '50%',
-      transform:       'translateX(-50%)',
-      zIndex:          '2147483647',
-      padding:         '10px 20px',
-      borderRadius:    '8px',
-      fontSize:        '14px',
-      fontFamily:      'system-ui, sans-serif',
-      fontWeight:      '600',
-      color:           '#fff',
-      background:      type === 'error' ? 'rgba(220,38,38,0.92)' : 'rgba(15,23,42,0.90)',
-      border:          type === 'error' ? '1px solid #f87171' : '1px solid #38BDF8',
-      boxShadow:       '0 4px 20px rgba(0,0,0,0.4)',
-      pointerEvents:   'none',
-      transition:      'opacity 0.4s ease',
-      opacity:         '1',
-      whiteSpace:      'nowrap',
+  function showToast(text, type = 'info', duration = 2000) {
+    const pill = document.createElement('div');
+    pill.textContent = text;
+
+    const isError = type === 'error';
+
+    Object.assign(pill.style, {
+      // Layout
+      position:          'fixed',
+      top:               '28px',
+      left:              '50%',
+      zIndex:            '2147483647',
+      pointerEvents:     'none',
+      whiteSpace:        'nowrap',
+
+      // Start off-screen (slides in)
+      transform:         'translateX(-50%) translateY(-14px)',
+      opacity:           '0',
+
+      // Pill shape
+      padding:           '11px 26px',
+      borderRadius:      '999px',
+
+      // Typography — Helvetica Neue on Mac, Segoe UI on Windows, clean system-ui fallback
+      fontFamily:        "'Helvetica Neue', 'Segoe UI', system-ui, -apple-system, sans-serif",
+      fontSize:          '11px',
+      fontWeight:        '500',
+      letterSpacing:     '0.10em',
+      textTransform:     'uppercase',
+      color:             isError ? '#fca5a5' : 'rgba(255, 255, 255, 0.92)',
+
+      // Frosted-glass background
+      background:        isError
+        ? 'rgba(30, 8, 8, 0.88)'
+        : 'rgba(8, 12, 20, 0.86)',
+      backdropFilter:    'blur(24px) saturate(1.6)',
+      WebkitBackdropFilter: 'blur(24px) saturate(1.6)',
+
+      // Border — hairline, no color accent
+      border:            isError
+        ? '1px solid rgba(248, 113, 113, 0.35)'
+        : '1px solid rgba(255, 255, 255, 0.10)',
+
+      // Shadow
+      boxShadow:         '0 12px 40px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255,255,255,0.06) inset',
+
+      // Transition
+      transition:        'opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
     });
-    document.documentElement.appendChild(toast);
+
+    document.documentElement.appendChild(pill);
+
+    // Slide in on the next frame so the browser registers the initial state first.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        pill.style.opacity   = '1';
+        pill.style.transform = 'translateX(-50%) translateY(0)';
+      });
+    });
+
+    // Slide out then remove.
     setTimeout(() => {
-      toast.style.opacity = '0';
-      setTimeout(() => toast.remove(), 450);
+      pill.style.opacity   = '0';
+      pill.style.transform = 'translateX(-50%) translateY(-10px)';
+      setTimeout(() => pill.remove(), 400);
     }, duration);
   }
 
-  // ─── Overlay lifecycle ───────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Overlay lifecycle ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function createOverlay() {
     if (overlayActive) return;
@@ -115,7 +153,7 @@
 
     canvas.addEventListener('mousedown', _onMouseDown);
     canvas.addEventListener('mousemove', _onMouseMove);
-    // mouseup on window — fires even if the cursor leaves the canvas during
+    // mouseup on window ΓÇö fires even if the cursor leaves the canvas during
     // a fast circular stroke, preventing the overlay from getting stuck.
     window.addEventListener('mouseup',   _onMouseUp);
     document.addEventListener('keydown', _onKeyDown);
@@ -133,7 +171,7 @@
       animFrameId = null;
     }
 
-    // mouseup was registered on window, not canvas — remove it there.
+    // mouseup was registered on window, not canvas ΓÇö remove it there.
     window.removeEventListener('mouseup', _onMouseUp);
 
     if (canvas) {
@@ -157,10 +195,10 @@
     points    = [];
   }
 
-  // ─── Canvas styling ──────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Canvas styling ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function applyDrawingStyles() {
-    // Glowing light-blue stroke — mimics Google Circle to Search
+    // Glowing light-blue stroke ΓÇö mimics Google Circle to Search
     ctx.strokeStyle = '#38BDF8';           // Sky-blue
     ctx.lineWidth   = 3.5;
     ctx.lineCap     = 'round';
@@ -169,7 +207,7 @@
     ctx.shadowBlur  = 16;
   }
 
-  // ─── Drawing handlers ────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Drawing handlers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function handleMouseDown(e) {
     // Only respond to primary button
@@ -205,15 +243,15 @@
     const bbox = { minX, minY, width, height };
     console.log('[Circle to Search] Corrected bbox:', bbox, '  centroid:', { cx, cy });
 
-    // Phase 1 — snap raw stroke into clean ellipse with pulse animation (~600 ms).
-    // Phase 2 — once animation ends, crop the pre-captured screenshot and download.
+    // Phase 1 ΓÇö snap raw stroke into clean ellipse with pulse animation (~600 ms).
+    // Phase 2 ΓÇö once animation ends, crop the pre-captured screenshot and download.
     animateSnapToEllipse({ cx, cy, rx: width / 2, ry: height / 2 }, () => {
       if (storedScreenshot) {
-        showToast('✅ Crop saved to memory — check console');
+        showToast('Selection captured');
         cropToMemory(storedScreenshot, bbox, window.devicePixelRatio || 1);
       } else {
-        showToast('⚠️ No screenshot — reload extension and try again.', 'error', 4000);
-        console.warn('[Circle to Search] No screenshot available — skipping crop.');
+        showToast('Capture failed — reload the extension', 'error', 4000);
+        console.warn('[Circle to Search] No screenshot available ΓÇö skipping crop.');
       }
       // Brief pause so the user sees the final glow before the overlay disappears.
       setTimeout(removeOverlay, 200);
@@ -224,11 +262,11 @@
     if (e.key === 'Escape') removeOverlay();
   }
 
-  // ─── Real-time stroke smoothing ───────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Real-time stroke smoothing ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   /**
    * Re-draws the entire stroke on every mousemove using mid-point quadratic
-   * Bézier curves. Each segment curves through the midpoint of consecutive
+   * B├⌐zier curves. Each segment curves through the midpoint of consecutive
    * samples rather than drawing straight lines between raw pointer positions,
    * producing a smooth, fluid line in real-time.
    */
@@ -256,15 +294,15 @@
     ctx.stroke();
   }
 
-  // ─── Snap-to-ellipse animation ────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Snap-to-ellipse animation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   /**
    * Clears the raw stroke and animates a polished, glowing ellipse that
    * "snaps" into place over ~600 ms in three phases:
    *
-   *   Phase A (0 – 150 ms)  — ellipse scales up from 0 → 1 (snap-in).
-   *   Phase B (150 – 400 ms) — shadowBlur pulses from 16 → 40 (glow peak).
-   *   Phase C (400 – 600 ms) — shadowBlur settles back to 16 (calm glow).
+   *   Phase A (0 ΓÇô 150 ms)  ΓÇö ellipse scales up from 0 ΓåÆ 1 (snap-in).
+   *   Phase B (150 ΓÇô 400 ms) ΓÇö shadowBlur pulses from 16 ΓåÆ 40 (glow peak).
+   *   Phase C (400 ΓÇô 600 ms) ΓÇö shadowBlur settles back to 16 (calm glow).
    *
    * @param {{ cx: number, cy: number, rx: number, ry: number }} ellipse
    * @param {() => void} onComplete  Called once when the animation finishes.
@@ -278,7 +316,7 @@
     const startTime = performance.now();
 
     /**
-     * Ease-out cubic: fast start, gradual finish — good for a "snap" feel.
+     * Ease-out cubic: fast start, gradual finish ΓÇö good for a "snap" feel.
      * @param {number} t  Progress in [0, 1].
      */
     function easeOutCubic(t) {
@@ -287,7 +325,7 @@
 
     /**
      * Draw a single ellipse frame.
-     * @param {number} scale   Radii multiplier (0 → 1 during snap-in).
+     * @param {number} scale   Radii multiplier (0 ΓåÆ 1 during snap-in).
      * @param {number} blur    shadowBlur value.
      * @param {number} alpha   Global opacity (reserved for future fade-out).
      */
@@ -320,20 +358,20 @@
       let scale, blur, alpha;
 
       if (elapsed < SNAP_MS) {
-        // Phase A — snap in.
+        // Phase A ΓÇö snap in.
         const t = elapsed / SNAP_MS;
         scale = easeOutCubic(t);
         blur  = 16;
         alpha = 1;
       } else if (elapsed < SNAP_MS + GLOW_MS) {
-        // Phase B — glow pulse.
+        // Phase B ΓÇö glow pulse.
         const t = (elapsed - SNAP_MS) / GLOW_MS;
         scale = 1;
-        // Pulse blur 16 → 40 → 16 using a sine wave.
+        // Pulse blur 16 ΓåÆ 40 ΓåÆ 16 using a sine wave.
         blur  = 16 + 24 * Math.sin(t * Math.PI);
         alpha = 1;
       } else {
-        // Phase C — settle.
+        // Phase C ΓÇö settle.
         scale = 1;
         blur  = 16;
         alpha = 1;
@@ -352,7 +390,7 @@
     animFrameId = requestAnimationFrame(tick);
   }
 
-  // ─── Crop → memory ─────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Crop ΓåÆ memory ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   /**
    * Loads the pre-captured screenshot, crops it to the selection bounding box
@@ -375,11 +413,11 @@
 
       // Guard against a zero-area or out-of-bounds crop.
       if (sw <= 0 || sh <= 0) {
-        console.warn('[Circle to Search] Crop area is empty — nothing to download.');
+        console.warn('[Circle to Search] Crop area is empty ΓÇö nothing to download.');
         return;
       }
 
-      // Off-screen canvas — never added to the DOM.
+      // Off-screen canvas ΓÇö never added to the DOM.
       const offscreen = document.createElement('canvas');
       offscreen.width  = sw;
       offscreen.height = sh;
@@ -391,7 +429,7 @@
 
       const croppedDataUrl = offscreen.toDataURL('image/png');
 
-      // Store in memory — no file download.
+      // Store in memory ΓÇö no file download.
       window.currentCroppedImage = croppedDataUrl;
       console.log('Cropped image ready in memory:', window.currentCroppedImage);
     };
@@ -403,7 +441,7 @@
     img.src = screenshotUrl;
   }
 
-  // ─── Geometry helpers ─────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Geometry helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   /**
    * Computes the axis-aligned bounding box AND the centroid (center of mass)
@@ -414,7 +452,7 @@
    *   minX: number, minY: number,
    *   maxX: number, maxY: number,
    *   width: number, height: number,
-   *   cx: number, cy: number   ← geometric center of the bounding box
+   *   cx: number, cy: number   ΓåÉ geometric center of the bounding box
    * }}
    */
   function computeBoundingBox(pts) {
@@ -447,7 +485,7 @@
     };
   }
 
-  // ─── Message listener ────────────────────────────────────────────────────────
+  // ΓöÇΓöÇΓöÇ Message listener ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.action !== 'toggle-overlay') return;
@@ -456,13 +494,13 @@
       removeOverlay();
     } else {
       // Store the pre-captured screenshot sent by background.js.
-      // It was taken the moment Alt+S was pressed — clean, no overlay visible.
+      // It was taken the moment Alt+S was pressed ΓÇö clean, no overlay visible.
       storedScreenshot = message.screenshotUrl || null;
       if (storedScreenshot) {
-        showToast('📷 Ready — draw your selection');
+        showToast('Draw to capture');
       } else {
-        showToast('⚠️ Screenshot failed — reload the extension.', 'error', 4000);
-        console.warn('[Circle to Search] No screenshot in toggle message — crop will be skipped.');
+        showToast('Capture unavailable — reload the extension', 'error', 4000);
+        console.warn('[Circle to Search] No screenshot in toggle message ΓÇö crop will be skipped.');
       }
       createOverlay();
     }
