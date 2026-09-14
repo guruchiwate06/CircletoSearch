@@ -204,12 +204,17 @@
   // ΓöÇΓöÇΓöÇ Canvas styling ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
   function applyDrawingStyles() {
-    // Glowing light-blue stroke ΓÇö mimics Google Circle to Search
-    ctx.strokeStyle = '#38BDF8';           // Sky-blue
-    ctx.lineWidth   = 3.5;
+    // Glowing gradient stroke
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, '#a855f7');   // Purple
+    gradient.addColorStop(0.5, '#ec4899'); // Pink
+    gradient.addColorStop(1, '#f59e0b');   // Yellow
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth   = 4;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
-    ctx.shadowColor = '#7DD3FC';           // Softer outer glow
+    ctx.shadowColor = '#ec4899';           // Pink outer glow
     ctx.shadowBlur  = 16;
   }
 
@@ -341,14 +346,19 @@
     function drawEllipseFrame(scale, blur, alpha) {
       if (!ctx || !canvas) return;  // Guard: overlay may have been force-closed.
 
+      const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      gradient.addColorStop(0, '#a855f7');
+      gradient.addColorStop(0.5, '#ec4899');
+      gradient.addColorStop(1, '#f59e0b');
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.save();
       ctx.globalAlpha  = alpha;
-      ctx.strokeStyle  = '#38BDF8';
-      ctx.lineWidth    = 3.5;
+      ctx.strokeStyle  = gradient;
+      ctx.lineWidth    = 4;
       ctx.lineCap      = 'round';
-      ctx.shadowColor  = '#7DD3FC';
+      ctx.shadowColor  = '#ec4899';
       ctx.shadowBlur   = blur;
 
       ctx.beginPath();
@@ -484,12 +494,21 @@
       display: flex;
       flex-direction: column;
       background: #0b0e17;
-      border-left: 1px solid rgba(255,255,255,0.07);
       box-shadow: -16px 0 56px rgba(0,0,0,0.70);
       transform: translateX(100%);
       transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
       overflow: hidden;
       font-family: 'Helvetica Neue', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, #a855f7, #ec4899, #f59e0b);
+      box-shadow: 0 0 14px rgba(236, 72, 153, 0.8);
+      z-index: 10;
     }
 
     .panel.open { transform: translateX(0); }
