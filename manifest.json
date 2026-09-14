@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "description": "Draw a freehand circle on any webpage to capture a selection area — desktop-style Circle to Search.",
 
+  "icons": {
+    "16": "icons/icon.jpg",
+    "48": "icons/icon.jpg",
+    "128": "icons/icon.jpg"
+  },
+
   "permissions": [
     "activeTab",
     "scripting",
