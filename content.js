@@ -128,6 +128,21 @@
     canvas = document.createElement('canvas');
     canvas.id = 'desktop-circle-search-overlay';
 
+    // Inject global styles for the breathing glow animation if not already present
+    if (!document.getElementById('c2s-global-styles')) {
+      const style = document.createElement('style');
+      style.id = 'c2s-global-styles';
+      style.textContent = `
+        @keyframes c2s-breathe {
+          0% { box-shadow: inset 0 0 0 2px rgba(236,72,153,0.8), inset 0 0 24px rgba(236,72,153,0.6), inset 0 0 48px rgba(168,85,247,0.4), inset 0 0 48px rgba(245,158,11,0.4); }
+          33% { box-shadow: inset 0 0 0 2px rgba(168,85,247,0.8), inset 0 0 24px rgba(168,85,247,0.6), inset 0 0 48px rgba(56,189,248,0.4), inset 0 0 48px rgba(236,72,153,0.4); }
+          66% { box-shadow: inset 0 0 0 2px rgba(56,189,248,0.8), inset 0 0 24px rgba(56,189,248,0.6), inset 0 0 48px rgba(34,197,94,0.4), inset 0 0 48px rgba(168,85,247,0.4); }
+          100% { box-shadow: inset 0 0 0 2px rgba(236,72,153,0.8), inset 0 0 24px rgba(236,72,153,0.6), inset 0 0 48px rgba(168,85,247,0.4), inset 0 0 48px rgba(245,158,11,0.4); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     // Fixed, full-viewport, top z-index
     Object.assign(canvas.style, {
       position:        'fixed',
@@ -139,12 +154,9 @@
       cursor:          'crosshair',
       // Subtle dark wash so the glowing stroke pops against any page
       background:      'rgba(0, 0, 0, 0.18)',
-      // Multi-colored glowing border on all sides
+      // Animated multi-colored glowing border on all sides
       boxSizing:       'border-box',
-      boxShadow:       'inset 0 0 0 2px rgba(236, 72, 153, 0.8), ' +
-                       'inset 0 0 24px rgba(236, 72, 153, 0.6), ' +
-                       'inset 0 0 48px rgba(168, 85, 247, 0.4), ' +
-                       'inset 0 0 48px rgba(245, 158, 11, 0.4)',
+      animation:       'c2s-breathe 6s infinite linear',
       // Prevent the canvas from swallowing text selection on the page beneath
       userSelect:      'none',
       touchAction:     'none',
@@ -512,9 +524,17 @@
       position: absolute;
       top: 0; left: 0; bottom: 0;
       width: 2px;
-      background: linear-gradient(to bottom, #a855f7, #ec4899, #f59e0b);
-      box-shadow: 0 0 14px rgba(236, 72, 153, 0.8);
+      background: linear-gradient(to bottom, #a855f7, #ec4899, #f59e0b, #38bdf8, #22c55e, #a855f7);
+      background-size: 100% 500%;
       z-index: 10;
+      animation: panel-glow-move 6s linear infinite;
+    }
+
+    @keyframes panel-glow-move {
+      0%   { background-position: 0 0%;   box-shadow: 0 0 16px rgba(236, 72, 153, 0.8); }
+      33%  { background-position: 0 50%;  box-shadow: 0 0 16px rgba(168, 85, 247, 0.8); }
+      66%  { background-position: 0 100%; box-shadow: 0 0 16px rgba(56, 189, 248, 0.8); }
+      100% { background-position: 0 0%;   box-shadow: 0 0 16px rgba(236, 72, 153, 0.8); }
     }
 
     .panel.open { transform: translateX(0); }
